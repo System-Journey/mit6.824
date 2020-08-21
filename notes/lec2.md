@@ -25,8 +25,6 @@
 
 #### crawler example
 
-> go中map本质上是一个指针，因此传map即传map的引用。  
-> `go run --race ..go`可以检测race，运行时分配shadow memory并且check读写，非静态检测。
 
 + Exploit I/O concurrency
 + Fetch each URL only *once*
@@ -66,8 +64,13 @@
 	    done.Wait()
     }
     ```
-    + `waitgroup`本质上是counter，用于线程的同步。
-    + defect: 创建了太多的线程，可以利用线程池。
+
++ `waitgroup`本质上是counter，用于线程的同步。
++ defect: 创建了太多的线程，可以利用线程池。
++ go中map本质上是一个指针，因此传map即传map的引用。  
+
+> `go run --race ..go`可以检测race，运行时分配shadow memory并且check读写，非静态检测。
+
 2. style2: using channel
     ```go
     // worker向channel中发送urls
@@ -320,7 +323,7 @@ func main() {
 
 ##### best effort
 
-> `Call()`等待响应，若未收到，则重发请求。重复多次后返回error。
+`Call()`等待响应，若未收到，则重发请求。重复多次后返回error。
 
 + 适用情况
     + 只读操作
