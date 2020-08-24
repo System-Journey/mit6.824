@@ -92,7 +92,7 @@ func (m *Master) ReduceTaskRequest(args *EmptyArgs, reply *ReduceTaskReply) erro
 	defer m.mu.Unlock()
 	for i := range m.reduceTasks {
 		rt := m.reduceTasks[i]
-		if rt.state = statusIdle {
+		if rt.state == statusIdle {
 			rt.state = statusInprogress
 			go func() {
 				time.Sleep(10 * time.Second)
@@ -103,28 +103,26 @@ func (m *Master) ReduceTaskRequest(args *EmptyArgs, reply *ReduceTaskReply) erro
 				}
 			}()
 			reply.NWorker = m.nWorker
-			reply.TaskID  = strconv.Itoa(i)
-			reply.Valid   = true
+			reply.TaskID = strconv.Itoa(i)
+			reply.Valid = true
 		} else {
-			reply.Valid = false;
+			reply.Valid = false
 		}
 	}
 	return nil
 }
 
-
 //
 // ReduceFileRequest to master
 //
 func (m *Master) ReduceFileRequest(args *ReduceFileArgs, reply *ReduceFileReply) error {
-	id := strconv.Atoi(args.TaskID)
+	id, _ := strconv.Atoi(args.TaskID)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	reply.intermediatefiles = []string{}
-	replyfiles := &reply.intermediatefiles
 	for i := 0; i < m.nWorker; i++ {
-		if _, ok := m.reduceTasks[id].inputFiles; ok == false && m.mapTasks[i].state == statusCompleted {
-			replyfiles = append(replyfiles, m.mapTasks[i].outputFiles[id])
+		if _, ok := m.reduceTasks[id].inputFiles[i]; ok == false && m.mapTasks[i].state == statusCompleted {
+			reply.intermediatefiles = append(reply.intermediatefiles, m.mapTasks[i].outputFiles[id])
 		}
 	}
 	return nil
@@ -134,7 +132,7 @@ func (m *Master) ReduceFileRequest(args *ReduceFileArgs, reply *ReduceFileReply)
 // ReduceTaskFinish to master
 //
 func (m *Master) ReduceTaskFinish(args *ReduceFinishArgs, reply *EmptyReply) error {
-	id := strconv.Atoi(args.TaskID)
+	id, _ := strconv.Atoi(args.TaskID)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reduceTasks[id].state = statusCompleted
@@ -172,10 +170,15 @@ func (m *Master) server() {
 // if the entire job has finished.
 //
 func (m *Master) Done() bool {
-	ret := false
+	ret := true
 
-	// Your code here.
-
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := 0; i < len(m.reduceTasks); i++ {
+		if m.reduceTasks[i].state != statusCompleted {
+			ret = false
+		}
+	}
 	return ret
 }
 
@@ -204,7 +207,7 @@ func MakeMaster(files []string, nReduce int) *Master {
 
 	for i := 0; i < nReduce; i++ {
 		rt := ReduceTask{}
-		rt.inputFiles = []string{}
+		rt.inputFiles = map[int]string{}
 		m.reduceTasks = append(m.reduceTasks, rt)
 	}
 
