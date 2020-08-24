@@ -1,10 +1,22 @@
 package mr
 
-import "fmt"
-import "log"
-import "net/rpc"
-import "hash/fnv"
+import (
+	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"io/ioutil"
+	"log"
+	"net/rpc"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+)
 
+var (
+	mapfun    func(string, string) []KeyValue
+	reducefun func(string, []string) string
+)
 
 //
 // Map functions return a slice of KeyValue.
@@ -13,6 +25,14 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+// for sorting by key.
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 //
 // use ihash(key) % NReduce to choose the reduce
@@ -24,7 +44,6 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-
 //
 // main/mrworker.go calls this function.
 //
@@ -35,7 +54,95 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// uncomment to send the Example RPC to the master.
 	// CallExample()
+	mapfun = mapf
+	reducefun = reducef
 
+	for {
+		// request map task
+		mtReply := CallMapTaskRequest()
+		// map task received
+		if mtReply.Valid {
+			ofiles := doMap(mtReply)
+			// notify master
+			CallMapFinish(mtReply.TaskID, ofiles)
+			continue
+		}
+
+		// request reduce task
+		rdReply := CallReduceTaskRequest()
+		// reduce task received
+		if rdReply.Valid {
+			doReduce(rdReply)
+			// notify master
+			CallReduceFinish(rdReply.TaskID)
+			continue
+		}
+	}
+}
+
+//
+// CallMapTaskRequest to master
+//
+func CallMapTaskRequest() MapTaskReply {
+	args := EmptyArgs{}
+	reply := MapTaskReply{}
+
+	call("Master.MapTaskRequest", &args, &reply)
+
+	log.Println("[MAP WORKER " + reply.TaskID + "] start")
+	return reply
+}
+
+//
+// CallMapFinish to master
+//
+func CallMapFinish(taskID string, ofiles []string) {
+	args := MapFinishArgs{}
+	reply := EmptyReply{}
+
+	args.TaskID = taskID
+	args.outputfiles = ofiles
+
+	call("Master.MapTaskFinish", &args, &reply)
+	log.Println("[MAP WORKER " + taskID + "] complete")
+}
+
+//
+// CallReduceTaskRequest to master
+//
+func CallReduceTaskRequest() ReduceTaskReply {
+	args := EmptyArgs{}
+	reply := ReduceTaskReply{}
+
+	call("Master.ReduceTaskRequest", &args, &reply)
+
+	log.Println("[REDUCE WORKER " + reply.TaskID + "] start")
+	return reply
+}
+
+//
+// CallReduceFileRequest to master
+//
+func CallReduceFileRequest(taskID string) []string {
+	args := ReduceFileArgs{}
+	reply := ReduceFileReply{}
+
+	args.TaskID = taskID
+	call("Master.ReduceFileRequest", &args, &reply)
+	return reply.intermediatefiles
+}
+
+//
+// CallReduceFinish to master
+//
+func CallReduceFinish(taskID string) {
+	args := ReduceFinishArgs{}
+	reply := EmptyReply{}
+
+	args.TaskID = taskID
+
+	call("Master.ReduceFinish", &args, &reply)
+	log.Println("[REDUCE WORKER " + taskID + "] finish")
 }
 
 //
@@ -82,4 +189,93 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 
 	fmt.Println(err)
 	return false
+}
+
+func doMap(reply MapTaskReply) []string {
+	// read input data
+	file, err := os.Open(reply.Inputfile)
+	if err != nil {
+		log.Fatalf("cannot open %v", reply.Inputfile)
+	}
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatalf("cannot read %v, filename")
+	}
+	file.Close()
+	// calc intermediate key value pairs
+	kva := mapfun(reply.Inputfile, string(content))
+	// write r intermediate files
+	interfs := []*os.File{}
+	encoders := []*json.Encoder{}
+	for i := 0; i < reply.NReduce; i++ {
+		dir, _ := os.Getwd()
+		f, _ := ioutil.TempFile(dir, "*")
+		interfs = append(interfs, f)
+		encoders = append(encoders, json.NewEncoder(f))
+	}
+	for _, kv := range kva {
+		i := ihash(kv.Key) % reply.NReduce
+		encoders[i].Encode(&kv)
+	}
+	// rename temporary files
+	paths := []string{}
+	for i, f := range interfs {
+		dir, _ := os.Getwd()
+		oname := "mr-" + reply.TaskID + "-" + strconv.Itoa(i)
+		oldPath := filepath.Join(dir, f.Name())
+		newPath := filepath.Join(dir, oname)
+		err := os.Rename(oldPath, newPath)
+		if err != nil {
+			log.Fatal("[MAP WORKER" + reply.TaskID + "] rename temporary files failed")
+		}
+		paths = append(paths, newPath)
+	}
+	// return file paths
+	return paths
+}
+
+func doReduce(reply ReduceTaskReply) {
+	intermediate := []KeyValue{}
+	i := 0
+	for i < reply.NWorker {
+		fs := CallReduceFileRequest(reply.TaskID)
+		for _, filename := range fs {
+			file, err := os.Open(filename)
+			if err != nil {
+				log.Fatalf("cannot open %v", filename)
+			}
+			dec := json.NewDecoder(file)
+			for {
+				kv := KeyValue{}
+				if err := dec.Decode(&kv); err != nil {
+					break
+				}
+				intermediate = append(intermediate, kv)
+			}
+			file.Close()
+		}
+	}
+	// sorting intermediate files
+	sort.Sort(ByKey(intermediate))
+	// reduce on intermediate files
+	i = 0
+	dir, _ := os.Getwd()
+	tempFile, _ := ioutil.TempFile(dir, "*")
+	for i < len(intermediate) {
+		j := i + 1
+		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value)
+		}
+		output := reducefun(intermediate[i].Key, values)
+
+		fmt.Fprintf(tempFile, "%v %v\n", intermediate[i].Key, output)
+		i = j
+	}
+	tempFile.Close()
+	oname := "mr-out-" + reply.TaskID
+	os.Rename(filepath.Join(dir, tempFile.Name()), filepath.Join(dir, oname))
 }
