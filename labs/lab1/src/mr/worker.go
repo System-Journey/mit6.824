@@ -89,7 +89,9 @@ func CallMapTaskRequest() MapTaskReply {
 
 	call("Master.MapTaskRequest", &args, &reply)
 
-	log.Println("[MAP WORKER " + reply.TaskID + "] start")
+	if reply.Valid {
+		// log.Println("[MAP WORKER " + reply.TaskID + "] start")
+	}
 	return reply
 }
 
@@ -101,10 +103,9 @@ func CallMapFinish(taskID string, ofiles []string) {
 	reply := EmptyReply{}
 
 	args.TaskID = taskID
-	args.outputfiles = ofiles
-
+	args.Outputfiles = ofiles
 	call("Master.MapTaskFinish", &args, &reply)
-	log.Println("[MAP WORKER " + taskID + "] complete")
+	// log.Println("[MAP WORKER " + taskID + "] complete")
 }
 
 //
@@ -116,7 +117,9 @@ func CallReduceTaskRequest() ReduceTaskReply {
 
 	call("Master.ReduceTaskRequest", &args, &reply)
 
-	log.Println("[REDUCE WORKER " + reply.TaskID + "] start")
+	if reply.Valid {
+		// log.Println("[REDUCE WORKER " + reply.TaskID + "] start")
+	}
 	return reply
 }
 
@@ -124,12 +127,14 @@ func CallReduceTaskRequest() ReduceTaskReply {
 // CallReduceFileRequest to master
 //
 func CallReduceFileRequest(taskID string) []string {
+	// log.Printf("[REDUCE WORKER %v] request file\n", taskID)
 	args := ReduceFileArgs{}
 	reply := ReduceFileReply{}
 
 	args.TaskID = taskID
 	call("Master.ReduceFileRequest", &args, &reply)
-	return reply.intermediatefiles
+
+	return reply.Intermediatefiles
 }
 
 //
@@ -141,8 +146,8 @@ func CallReduceFinish(taskID string) {
 
 	args.TaskID = taskID
 
-	call("Master.ReduceFinish", &args, &reply)
-	log.Println("[REDUCE WORKER " + taskID + "] finish")
+	call("Master.ReduceTaskFinish", &args, &reply)
+	// log.Println("[REDUCE WORKER " + taskID + "] finish")
 }
 
 //
@@ -199,7 +204,7 @@ func doMap(reply MapTaskReply) []string {
 	}
 	content, err := ioutil.ReadAll(file)
 	if err != nil {
-		log.Fatalf("cannot read %v, filename")
+		log.Fatalf("cannot read %v, filename", file.Name())
 	}
 	file.Close()
 	// calc intermediate key value pairs
@@ -222,9 +227,8 @@ func doMap(reply MapTaskReply) []string {
 	for i, f := range interfs {
 		dir, _ := os.Getwd()
 		oname := "mr-" + reply.TaskID + "-" + strconv.Itoa(i)
-		oldPath := filepath.Join(dir, f.Name())
 		newPath := filepath.Join(dir, oname)
-		err := os.Rename(oldPath, newPath)
+		err := os.Rename(f.Name(), newPath)
 		if err != nil {
 			log.Fatal("[MAP WORKER" + reply.TaskID + "] rename temporary files failed")
 		}
@@ -240,6 +244,7 @@ func doReduce(reply ReduceTaskReply) {
 	for i < reply.NWorker {
 		fs := CallReduceFileRequest(reply.TaskID)
 		for _, filename := range fs {
+			// log.Printf("[REDUCE WORKER "+reply.TaskID+"] get file %v\n", filename)
 			file, err := os.Open(filename)
 			if err != nil {
 				log.Fatalf("cannot open %v", filename)
@@ -253,6 +258,7 @@ func doReduce(reply ReduceTaskReply) {
 				intermediate = append(intermediate, kv)
 			}
 			file.Close()
+			i++
 		}
 	}
 	// sorting intermediate files
@@ -277,5 +283,5 @@ func doReduce(reply ReduceTaskReply) {
 	}
 	tempFile.Close()
 	oname := "mr-out-" + reply.TaskID
-	os.Rename(filepath.Join(dir, tempFile.Name()), filepath.Join(dir, oname))
+	os.Rename(tempFile.Name(), filepath.Join(dir, oname))
 }

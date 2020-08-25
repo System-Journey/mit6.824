@@ -45,6 +45,7 @@ type ReduceTask struct {
 // MapTaskRequest handler, ARGS unused
 //
 func (m *Master) MapTaskRequest(args *EmptyArgs, reply *MapTaskReply) error {
+	// log.Println("[MASTER] MapTaskRequest Received")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -54,6 +55,8 @@ func (m *Master) MapTaskRequest(args *EmptyArgs, reply *MapTaskReply) error {
 			mt.state = statusInprogress
 			go func() {
 				time.Sleep(10 * time.Second)
+				m.mu.Lock()
+				defer m.mu.Unlock()
 				if mt.state != statusCompleted {
 					mt.state = statusIdle
 				}
@@ -73,14 +76,16 @@ func (m *Master) MapTaskRequest(args *EmptyArgs, reply *MapTaskReply) error {
 //
 // MapFinshHandler is handler for map task finish call
 //
-func (m *Master) MapFinishHandler(args *MapFinishArgs, reply *EmptyReply) error {
+func (m *Master) MapTaskFinish(args *MapFinishArgs, reply *EmptyReply) error {
+	// log.Println("[MASTER] MapTaskFinish Received")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	// fullfill maptask struct
 	id, _ := strconv.Atoi(args.TaskID)
-	mt := m.mapTasks[id]
+	mt := &m.mapTasks[id]
 	mt.state = statusCompleted
-	mt.outputFiles = args.outputfiles
+	mt.outputFiles = args.Outputfiles
+	// log.Printf("[MASTER] receive map result files %v\n", mt.outputFiles)
 	return nil
 }
 
@@ -88,14 +93,17 @@ func (m *Master) MapFinishHandler(args *MapFinishArgs, reply *EmptyReply) error 
 // ReduceTask request handler
 //
 func (m *Master) ReduceTaskRequest(args *EmptyArgs, reply *ReduceTaskReply) error {
+	// log.Println("[MASTER] ReduceTaskRequest Received")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.reduceTasks {
-		rt := m.reduceTasks[i]
+		rt := &m.reduceTasks[i]
 		if rt.state == statusIdle {
 			rt.state = statusInprogress
 			go func() {
 				time.Sleep(10 * time.Second)
+				m.mu.Lock()
+				defer m.mu.Unlock()
 				if rt.state != statusCompleted {
 					// reset reduce task state
 					rt.state = statusIdle
@@ -105,6 +113,7 @@ func (m *Master) ReduceTaskRequest(args *EmptyArgs, reply *ReduceTaskReply) erro
 			reply.NWorker = m.nWorker
 			reply.TaskID = strconv.Itoa(i)
 			reply.Valid = true
+			break
 		} else {
 			reply.Valid = false
 		}
@@ -119,10 +128,10 @@ func (m *Master) ReduceFileRequest(args *ReduceFileArgs, reply *ReduceFileReply)
 	id, _ := strconv.Atoi(args.TaskID)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	reply.intermediatefiles = []string{}
+	reply.Intermediatefiles = []string{}
 	for i := 0; i < m.nWorker; i++ {
-		if _, ok := m.reduceTasks[id].inputFiles[i]; ok == false && m.mapTasks[i].state == statusCompleted {
-			reply.intermediatefiles = append(reply.intermediatefiles, m.mapTasks[i].outputFiles[id])
+		if _, ok := m.reduceTasks[id].inputFiles[i]; !ok && m.mapTasks[i].state == statusCompleted {
+			reply.Intermediatefiles = append(reply.Intermediatefiles, m.mapTasks[i].outputFiles[id])
 		}
 	}
 	return nil
@@ -178,6 +187,14 @@ func (m *Master) Done() bool {
 		if m.reduceTasks[i].state != statusCompleted {
 			ret = false
 		}
+	}
+	if ret {
+		for _, mt := range m.mapTasks {
+			for _, filename := range mt.outputFiles {
+				os.Remove(filename)
+			}
+		}
+		// log.Println("[MR] MR work finished, system exit")
 	}
 	return ret
 }

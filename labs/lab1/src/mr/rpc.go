@@ -42,7 +42,7 @@ type MapTaskReply struct {
 
 type MapFinishArgs struct {
 	TaskID      string
-	outputfiles []string
+	Outputfiles []string
 }
 
 // reduce task
@@ -58,7 +58,7 @@ type ReduceFileArgs struct {
 }
 
 type ReduceFileReply struct {
-	intermediatefiles []string
+	Intermediatefiles []string
 }
 
 type ReduceFinishArgs struct {
