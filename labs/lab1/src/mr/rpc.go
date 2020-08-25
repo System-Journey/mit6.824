@@ -34,6 +34,7 @@ type EmptyReply struct {
 
 // map task
 type MapTaskReply struct {
+	Seq       int
 	TaskID    string
 	Inputfile string
 	NReduce   int
@@ -41,27 +42,33 @@ type MapTaskReply struct {
 }
 
 type MapFinishArgs struct {
+	Seq         int
 	TaskID      string
 	Outputfiles []string
+	Rst         bool
 }
 
 // reduce task
 
 type ReduceTaskReply struct {
+	Seq     int
 	TaskID  string
 	NWorker int
 	Valid   bool
 }
 
 type ReduceFileArgs struct {
+	Seq    int
 	TaskID string
 }
 
 type ReduceFileReply struct {
 	Intermediatefiles []string
+	Rst               bool
 }
 
 type ReduceFinishArgs struct {
+	Seq    int
 	TaskID string
 }
 

@@ -4,18 +4,20 @@
 # basic map-reduce test
 #
 
-RACE=
+# RACE=
 
 # uncomment this to run the tests with the Go race detector.
-#RACE=-race
+RACE=-race
 
 # run the test in a fresh sub-directory.
 rm -rf mr-tmp
+rmdir mr-tmp
 mkdir mr-tmp || exit 1
 cd mr-tmp || exit 1
 rm -f mr-*
 
 # make sure software is freshly built.
+echo "build new plugin so"
 (cd ../../mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
 (cd ../../mrapps && go build $RACE -buildmode=plugin indexer.go) || exit 1
 (cd ../../mrapps && go build $RACE -buildmode=plugin mtiming.go) || exit 1

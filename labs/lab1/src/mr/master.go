@@ -29,14 +29,16 @@ type Master struct {
 }
 
 type MapTask struct {
+	seq         int
 	state       status
 	inputFile   string
 	outputFiles []string
 }
 
 type ReduceTask struct {
+	seq        int
 	state      status
-	inputFiles map[int]string
+	inputFiles map[int]bool
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -58,9 +60,13 @@ func (m *Master) MapTaskRequest(args *EmptyArgs, reply *MapTaskReply) error {
 				m.mu.Lock()
 				defer m.mu.Unlock()
 				if mt.state != statusCompleted {
+					// log.Printf("[MAP WORKER %v] crashed =======================\n", i)
 					mt.state = statusIdle
+					mt.outputFiles = []string{}
+					mt.seq = mt.seq + 1
 				}
 			}()
+			reply.Seq = mt.seq
 			reply.Inputfile = mt.inputFile
 			reply.Valid = true
 			reply.NReduce = m.nReducer
@@ -83,6 +89,9 @@ func (m *Master) MapTaskFinish(args *MapFinishArgs, reply *EmptyReply) error {
 	// fullfill maptask struct
 	id, _ := strconv.Atoi(args.TaskID)
 	mt := &m.mapTasks[id]
+	if mt.seq != args.Seq {
+		return nil
+	}
 	mt.state = statusCompleted
 	mt.outputFiles = args.Outputfiles
 	// log.Printf("[MASTER] receive map result files %v\n", mt.outputFiles)
@@ -105,11 +114,14 @@ func (m *Master) ReduceTaskRequest(args *EmptyArgs, reply *ReduceTaskReply) erro
 				m.mu.Lock()
 				defer m.mu.Unlock()
 				if rt.state != statusCompleted {
+					// log.Printf("[REDUCE WORKER %v] crashed =======================\n", i)
 					// reset reduce task state
 					rt.state = statusIdle
-					rt.inputFiles = map[int]string{}
+					rt.inputFiles = map[int]bool{}
+					rt.seq = rt.seq + 1
 				}
 			}()
+			reply.Seq = rt.seq
 			reply.NWorker = m.nWorker
 			reply.TaskID = strconv.Itoa(i)
 			reply.Valid = true
@@ -128,12 +140,19 @@ func (m *Master) ReduceFileRequest(args *ReduceFileArgs, reply *ReduceFileReply)
 	id, _ := strconv.Atoi(args.TaskID)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// log.Printf("[REDUCE WORKER] seq: %v, RPC sec: %v", m.reduceTasks[id].seq, args.Seq)
+	if args.Seq != m.reduceTasks[id].seq {
+		reply.Rst = true
+		return nil
+	}
 	reply.Intermediatefiles = []string{}
 	for i := 0; i < m.nWorker; i++ {
 		if _, ok := m.reduceTasks[id].inputFiles[i]; !ok && m.mapTasks[i].state == statusCompleted {
 			reply.Intermediatefiles = append(reply.Intermediatefiles, m.mapTasks[i].outputFiles[id])
+			m.reduceTasks[id].inputFiles[i] = true
 		}
 	}
+	// log.Println("[REDUCE FILE REQUEST RECEIVED] ", reply.Intermediatefiles)
 	return nil
 }
 
@@ -224,7 +243,7 @@ func MakeMaster(files []string, nReduce int) *Master {
 
 	for i := 0; i < nReduce; i++ {
 		rt := ReduceTask{}
-		rt.inputFiles = map[int]string{}
+		rt.inputFiles = map[int]bool{}
 		m.reduceTasks = append(m.reduceTasks, rt)
 	}
 

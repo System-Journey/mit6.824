@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 )
 
 var (
@@ -64,7 +65,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		if mtReply.Valid {
 			ofiles := doMap(mtReply)
 			// notify master
-			CallMapFinish(mtReply.TaskID, ofiles)
+			CallMapFinish(mtReply.TaskID, mtReply.Seq, ofiles)
 			continue
 		}
 
@@ -72,10 +73,11 @@ func Worker(mapf func(string, string) []KeyValue,
 		rdReply := CallReduceTaskRequest()
 		// reduce task received
 		if rdReply.Valid {
-			doReduce(rdReply)
+			if !doReduce(rdReply) {
+				continue
+			}
 			// notify master
-			CallReduceFinish(rdReply.TaskID)
-			continue
+			CallReduceFinish(rdReply.TaskID, rdReply.Seq)
 		}
 	}
 }
@@ -98,14 +100,15 @@ func CallMapTaskRequest() MapTaskReply {
 //
 // CallMapFinish to master
 //
-func CallMapFinish(taskID string, ofiles []string) {
+func CallMapFinish(taskID string, seq int, ofiles []string) {
 	args := MapFinishArgs{}
 	reply := EmptyReply{}
 
 	args.TaskID = taskID
 	args.Outputfiles = ofiles
+	args.Seq = seq
 	call("Master.MapTaskFinish", &args, &reply)
-	// log.Println("[MAP WORKER " + taskID + "] complete")
+	// log.Printf("[MAP WORKER %v.%v] complete\n", taskID, seq)
 }
 
 //
@@ -118,7 +121,7 @@ func CallReduceTaskRequest() ReduceTaskReply {
 	call("Master.ReduceTaskRequest", &args, &reply)
 
 	if reply.Valid {
-		// log.Println("[REDUCE WORKER " + reply.TaskID + "] start")
+		// log.Printf("[REDUCE WORKER %v.%v] start\n", reply.TaskID, reply.Seq)
 	}
 	return reply
 }
@@ -126,25 +129,27 @@ func CallReduceTaskRequest() ReduceTaskReply {
 //
 // CallReduceFileRequest to master
 //
-func CallReduceFileRequest(taskID string) []string {
-	// log.Printf("[REDUCE WORKER %v] request file\n", taskID)
+func CallReduceFileRequest(taskID string, seq int) ReduceFileReply {
+	// log.Printf("[REDUCE WORKER %v.%v] request file\n", taskID, seq)
 	args := ReduceFileArgs{}
 	reply := ReduceFileReply{}
 
 	args.TaskID = taskID
+	args.Seq = seq
 	call("Master.ReduceFileRequest", &args, &reply)
 
-	return reply.Intermediatefiles
+	return reply
 }
 
 //
 // CallReduceFinish to master
 //
-func CallReduceFinish(taskID string) {
+func CallReduceFinish(taskID string, seq int) {
 	args := ReduceFinishArgs{}
 	reply := EmptyReply{}
 
 	args.TaskID = taskID
+	args.Seq = seq
 
 	call("Master.ReduceTaskFinish", &args, &reply)
 	// log.Println("[REDUCE WORKER " + taskID + "] finish")
@@ -238,13 +243,21 @@ func doMap(reply MapTaskReply) []string {
 	return paths
 }
 
-func doReduce(reply ReduceTaskReply) {
+func doReduce(reply ReduceTaskReply) bool {
 	intermediate := []KeyValue{}
 	i := 0
+	j := 0
 	for i < reply.NWorker {
-		fs := CallReduceFileRequest(reply.TaskID)
-		for _, filename := range fs {
-			// log.Printf("[REDUCE WORKER "+reply.TaskID+"] get file %v\n", filename)
+		if j == 7 {
+			return false
+		}
+		time.Sleep(time.Second)
+		freply := CallReduceFileRequest(reply.TaskID, reply.Seq)
+		if freply.Rst {
+			return false
+		}
+		for _, filename := range freply.Intermediatefiles {
+			// log.Printf("[REDUCE WORKER %v.%v] get file %v\n", reply.TaskID, reply.Seq, filename)
 			file, err := os.Open(filename)
 			if err != nil {
 				log.Fatalf("cannot open %v", filename)
@@ -260,6 +273,7 @@ func doReduce(reply ReduceTaskReply) {
 			file.Close()
 			i++
 		}
+		j++
 	}
 	// sorting intermediate files
 	sort.Sort(ByKey(intermediate))
@@ -284,4 +298,5 @@ func doReduce(reply ReduceTaskReply) {
 	tempFile.Close()
 	oname := "mr-out-" + reply.TaskID
 	os.Rename(tempFile.Name(), filepath.Join(dir, oname))
+	return true
 }

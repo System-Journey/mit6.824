@@ -38,15 +38,17 @@ const (
 )
 
 type MapTask struct {
-    state status
-    inputFile string
+    seq         int
+    state       status
+    inputFile   string
     outputFiles []string
     // timer time.Timer
 }
 
 type ReduceTask struct {
-    state status
-    inputFiles []string
+    seq         int
+    state       status
+    inputFiles  []string
     // timer time.Timter
 }
 ```
@@ -75,4 +77,17 @@ Master并发处理RPC请求，对其数据结构的访问需要加锁。
 
 ## 复盘
 
++ 从windows中移动文件到linux，注意需要改变换行符，尤其是脚本文件
 + 为简化，为每个输入文件分配一个map任务。
++ ***rpc传输的数据注意各个filed首字母应该大写导出，否则传递零值***
++ carsh崩溃的情况存在两种
+    1. 长时间不响应，master视其为crash
+        + 可能之后会向master发送rpc请求
+        + 为拒绝其提出的rpc请求，增加序列号机制，每当超时增加序列号，对于就序列号的rpc请求不予执行。
+    2. 真正crash
+    3. 当这两种结合时，可能存在以下情况：
+        + 例如存在三个worker，其中两个在执行map任务，另一个在执行reduce任务，执行reduce任务的不停向master请求读取另外两个生成的结果文件。此时，执行map任务的两个crash了，执行reduce任务的worker死循环等待。
+        + 解决：reduce任务请求文件超过一定时间自动结束任务执行，转而执行map任务。
+
+
+> ***rpc传输的数据注意各个filed首字母应该大写导出，否则传零值***.
