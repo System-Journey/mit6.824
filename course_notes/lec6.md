@@ -40,7 +40,7 @@ C2 ----- |- S2
 
 ---
 
-### topic: Raft overview
+## topic: Raft overview
 
 ## software view: raft library
 
