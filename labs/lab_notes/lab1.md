@@ -37,18 +37,19 @@ const (
 	statusCompleted  status = 2
 )
 
+// !!!大写
 type MapTask struct {
-    seq         int
-    state       status
-    inputFile   string
-    outputFiles []string
+    Seq         int
+    State       status
+    InputFile   string
+    OutputFiles []string
     // timer time.Timer
 }
 
 type ReduceTask struct {
-    seq         int
-    state       status
-    inputFiles  []string
+    Seq         int
+    State       status
+    InputFiles  []string
     // timer time.Timter
 }
 ```
@@ -71,6 +72,10 @@ type ReduceTask struct {
 + 垃圾回收：
     + 不需要，直接分配就好
 
+### Partially files
+
+先写入temp文件，写完之后，利用Rename()原子更新文件名。
+
 ## 同步
 
 Master并发处理RPC请求，对其数据结构的访问需要加锁。
@@ -88,6 +93,5 @@ Master并发处理RPC请求，对其数据结构的访问需要加锁。
     3. 当这两种结合时，可能存在以下情况：
         + 例如存在三个worker，其中两个在执行map任务，另一个在执行reduce任务，执行reduce任务的不停向master请求读取另外两个生成的结果文件。此时，执行map任务的两个crash了，执行reduce任务的worker死循环等待。
         + 解决：reduce任务请求文件超过一定时间自动结束任务执行，转而执行map任务。
-
 
 > ***rpc传输的数据注意各个filed首字母应该大写导出，否则传零值***.
