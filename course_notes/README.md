@@ -6,4 +6,5 @@
 - [x] [lec4: Primary-Backup Replication](./lec4.md)
 - [x] [lec5: Go, Threads, and Raft](./lec5.md)
 - [x] [lec6: Fault Tolerance: Raft(1)](./lec6.md)
-- [ ] [lec7: Fault Tolerance: Raft(1)](./lec7.md)
+- [x] [lec7: Fault Tolerance: Raft(1)](./lec7.md)
+- [x] [lec8: Zookeeper](./lec8.md)
