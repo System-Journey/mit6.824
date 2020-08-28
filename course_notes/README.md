@@ -8,3 +8,4 @@
 - [x] [lec6: Fault Tolerance: Raft(1)](./lec6.md)
 - [x] [lec7: Fault Tolerance: Raft(1)](./lec7.md)
 - [x] [lec8: Zookeeper](./lec8.md)
+- [x] [lec9: Chain Replication, CRAQ](./lec9.md)
