@@ -73,6 +73,7 @@ type Raft struct {
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
+	applyCh   chan ApplyMsg       // channel to apply committed message
 
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
@@ -83,17 +84,28 @@ type Raft struct {
 	log         []Log
 	votedFor    int
 
-	// volatile state
+	// leader elecion volatile state
 	state         state
 	stateChanged  bool
 	lastHeartBeat time.Time
 	timeout       int64
+
+	// log replication volatile state
+	commitIndex  int
+	lastApplied  int
+	logApplyCond *sync.Cond
+
+	// log replication leader state
+	nextIndex  []int
+	matchIndex []int
 }
 
 //
 // Log entry
 //
 type Log struct {
+	Term    int
+	Command interface{}
 }
 
 // return currentTerm and whether this server
@@ -155,6 +167,9 @@ type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
 	Term        int
 	CandidateID int
+	// vote restriction
+	lastLogIndex int
+	lastLogTerm  int
 }
 
 //
@@ -173,6 +188,12 @@ type RequestVoteReply struct {
 type AppendEntriesArgs struct {
 	Term     int
 	LeaderID int
+	// for consistency check
+	prevLogIndex int
+	prevLogTerm  int
+	// log entries
+	entries      []Log
+	leaderCommit int
 }
 
 //
@@ -300,9 +321,26 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
 	term := -1
-	isLeader := true
+	isLeader := false
+	log := Log{}
 
 	// Your code here (2B).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.state != Leader {
+		return index, term, isLeader
+	}
+
+	isLeader = true
+	// append new log
+	log.Command = command
+	log.Term = rf.currentTerm
+	rf.log = append(rf.log, log)
+	// get index
+	index = len(rf.log) - 1
+	// get term
+	term = rf.currentTerm
 
 	return index, term, isLeader
 }
@@ -352,7 +390,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.cond = sync.NewCond(&rf.mu)
 	rf.state = Follower
 	rf.votedFor = -1
-
+	// log replication
+	rf.log = append(rf.log, Log{}) // padding empty log
+	rf.logApplyCond = sync.NewCond(&Mutex{})
+	// TODO: persistent
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
@@ -372,6 +413,8 @@ func raft(rf *Raft) {
 	rf.mu.Lock()
 	// timeout goroutine
 	go timeoutRoutine(rf)
+	// appendLog goroutine
+	go appendLogRoutine(rf, rf.currentTerm)
 	// TODO: committed log sending goroutine
 	// go applyLogRoutine()
 	// state machine handle loop
@@ -398,6 +441,82 @@ func raft(rf *Raft) {
 			rf.cond.Wait()
 		}
 		rf.stateChanged = false
+	}
+}
+
+func appendLogRoutine(rf *Raft, term int) {
+	for {
+		// wait 10ms to batch append logs
+		time.Sleep(10 * time.Millisecond)
+		rf.mu.Lock()
+		// current not leader
+		if rf.state != Leader {
+			rf.mu.Unlock()
+			continue
+		}
+		// appendCount
+		mu := sync.Mutex{}
+		appendCount := make([]int, len(rf.log))
+		for i := rf.commitIndex + 1; i < len(appendCount); i++ {
+			appendCount[i]++
+		}
+		rf.mu.Unlock()
+		// send AppendEntreis RPC to each peer
+		for i := 0; i < len(rf.peers); i++ {
+			go func(x int) {
+				rf.mu.Lock()
+				appendEntriesReply := AppendEntriesReply{}
+				appendEntriesArgs := AppendEntriesArgs{
+					Term:         term,
+					LeaderID:     rf.me,
+					prevLogIndex: rf.nextIndex[x] - 1,
+					prevLogTerm:  rf.log[rf.nextIndex[x]-1].Term,
+					entries:      rf.log[rf.nextIndex[x]:],
+					leaderCommit: rf.commitIndex,
+				}
+				rf.mu.Unlock()
+				if !rf.sendAppendEntries(x, &appendEntriesArgs, &appendEntriesReply) {
+					time.Sleep(10 * time.Millisecond)
+				}
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+				// TODO: Fast roll back
+				if appendEntriesReply.Term != rf.currentTerm || !appendEntriesReply.Success {
+					return
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				for i := len(appendCount) - 1; i > rf.commitIndex; i-- {
+					appendCount[i]++
+					if appendCount[i] > len(rf.peers)/2 {
+						rf.logApplyCond.L.Lock()
+						rf.commitIndex = i
+						rf.logApplyCond.Broadcast()
+						rf.logApplyCond.L.Unlock()
+						break
+					}
+				}
+			}(i)
+		}
+	}
+}
+
+func applyLogRoutine(rf *Raft) {
+	for {
+		rf.logApplyCond.L.Lock()
+		for rf.commitIndex == rf.lastApplied {
+			rf.logApplyCond.Wait()
+		}
+		// TODO: apply log from applyIndex to commitIndex
+		for i := rf.lastApplied; i <= rf.commitIndex; i++ {
+			applyMsg := ApplyMsg{
+				CommandValid: true,
+				Command:      rf.log[i].Command,
+				CommandIndex: i,
+			}
+			rf.applyCh <- applyMsg
+		}
+		rf.logApplyCond.L.Unlock()
 	}
 }
 
@@ -444,6 +563,7 @@ func candidateVoteRoutine(rf *Raft, term int) {
 			for !rf.sendRequestVote(x,
 				&requestVoteArgs,
 				&requestVoteReply) {
+				time.Sleep(10 * time.Millisecond)
 			}
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
@@ -489,6 +609,7 @@ func heartBeatRoutine(rf *Raft, term int) {
 				appendEntriesArgs.LeaderID = rf.me
 				appendEntriesArgs.Term = term
 				for !rf.sendAppendEntries(x, &appendEntriesArgs, &appendEntriesReply) {
+					time.Sleep(10 * time.Millisecond)
 				}
 			}(i)
 		}

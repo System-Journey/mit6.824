@@ -152,9 +152,12 @@ goal：实现append新log的agreement。
 
 #### 结合skeleton code的append entries流程回顾
 
++ 专用appendLog线程
++ 专用applyLog线程
+
 1. 上层应用通过`Start()`发送需要commit的命令。
-2. 开启commit线程，开始agreement处理。
-3. leader将log加入自己状态，持久化。
+2. leader将log加入自己状态，持久化。
+3. appendLog触发时开始agreement处理。
 4. leader向各个follower发送AppendEntries RPC。
 5. 如果成功，`argeeCount`递增，如果失败，回滚`nextIndex`。
 6. 超过半数，agreement成功，向`applyCh`中发送命令。
