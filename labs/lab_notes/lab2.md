@@ -106,17 +106,17 @@ type AppendEntriesReply struct {
     + follower
         + 初始化timeout
         + 开启timeout go routine
-        + 等在channel上
+        + 等在cond上
     + candidate
         + currentTerm++
         + 给自己投票
         + 重置timeout
         + 每个client独立的发送voteRequest gorodutine
         + 开启timeout go routine
-        + 等在channel上
+        + 等在cond上
     + leader
         + 开启heartbeat发送线程
-        + 等在channel上
+        + 等在cond上
 2. AppendEntriesRPC
     + server收到回复:
         1. 比较发送时term和当前term
@@ -136,7 +136,7 @@ type AppendEntriesReply struct {
 #### 同步
 
 + 利用cond条件变量同步主raft线程和子线程
-+ 子线程或者rpc响应改变了当前peer的状态时，激活主raft线程中的条件变量
++ 当子线程或者rpc响应改变了当前peer的状态时，激活主raft线程中的条件变量
 
 #### 复盘
 
@@ -144,3 +144,86 @@ type AppendEntriesReply struct {
 + 出现测试有时能通过有时无法通过的情况，循环跑多次
 + trace首先输出逻辑时钟（当前term）较为方便`log.Printf("[TERM %v]...", rf.currentTerm)`
 + timeout线程不能返回
+
+### lab 2B Design Document
+
+goal：实现append新log的agreement。
+
+#### 结合skeleton code的append entries流程回顾
+
+1. 上层应用通过`Start()`发送需要commit的命令。
+2. 开启commit线程，开始agreement处理。
+3. leader将log加入自己状态，持久化。
+4. leader向各个follower发送AppendEntries RPC。
+5. 如果成功，`argeeCount`递增，如果失败，回滚`nextIndex`。
+6. 超过半数，agreement成功，向`applyCh`中发送命令。
+
+#### 数据结构
+
+```go
+type Raft struct {
+    applyCh    chan ApplyMsg      // channel to send committed message
+    cond      *sync.Cond          // cond to coordinate goroutines
+    // persistent state
+	currentTerm int
+	log         []Log
+	votedFor    int
+	// leader election volatile state
+	state         state
+	stateChanged  bool
+	lastHeartBeat time.Time
+    timeout       int64
+    // log replication volatile state
+    commitIndex   int
+    lastApplied   int
+    // log replication leader state
+    nextIndex     []int // 初始化为最后一个log索引+1
+    matchIndex    []int // 每个服务器已知的成功commit最大的索引
+}
+
+type AppendEntriesArgs struct {
+    Term int
+    LeaderID int
+    // consistency check
+    prevLogIndex int
+    prevLogTerm  int
+    // log entries
+    entries []Log
+    leaderCommit int
+}
+
+type AppendEntriesReply struct {
+    Term int
+    Success bool
+}
+
+type RequestVoteArgs struct {
+    Term int
+    CandidateID int
+    // vote restriction
+    lastLogIndex int
+    lastLogTerm  int
+}
+```
+
+#### 算法
+
+##### 单leader log共识
+
+1. leader主线程
+    + 每个server对应开启一个RPC goroutine处理
+2. leader RPC发送线程处理返回值
+    + false：重试
+    + term不正确，转为follower
+    + success为false，回滚日志重试
+3. follower RPC回调: figure2
+
+##### leader选举约束
+
++ 需要`lastLogTerm`更大或者`lastLogTerm`相同`lastLogIndex`更大
+
+#### 同步
+
+1. 独立的command apply线程以防send操作阻塞，向`applyCh`中顺序发送log entry。(从lastApplied发送到commitIndex)
+
+#### 复盘
