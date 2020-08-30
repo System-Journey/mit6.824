@@ -75,7 +75,8 @@ type Raft struct {
 }
 
 type Log struct {
-
+    Term int
+    Command interface{}
 }
 
 type RequestVoteArgs struct {
