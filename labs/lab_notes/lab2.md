@@ -237,3 +237,6 @@ type RequestVoteArgs struct {
 1. 独立的command apply线程以防send操作阻塞，向`applyCh`中顺序发送log entry。(从lastApplied发送到commitIndex)
 
 #### 复盘
+
+1. 隐藏bug: 对于voteRequest请求接收者，如其term小于请求的candiadate所在的term，需要转变为follower，此时若直接给予投票，则主状态机循环中就不应当设置votedFor为-1，否则可能出现同一server同一term投两次票的情况。
+    + 解决：转变状态为follower的同时即设置votedFor为-1，而不再在主状态机中设置votedFor。

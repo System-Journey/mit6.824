@@ -19,7 +19,6 @@ package raft
 
 import (
 	"lab2/src/labrpc"
-	"log"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -256,7 +255,7 @@ func checkUptoDate(rf *Raft, term int, lastIndex int) bool {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	log.Printf("[TERM %v] %v %v got heart from term %v leader %v", rf.currentTerm, states[rf.state], rf.me, args.Term, args.LeaderID)
+	// log.Printf("[TERM %v] %v %v got heart from term %v leader %v", rf.currentTerm, states[rf.state], rf.me, args.Term, args.LeaderID)
 	// stale request
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
@@ -264,10 +263,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 	// advanced request
-	if args.Term > rf.currentTerm {
+	if args.Term > rf.currentTerm || rf.state == Candidate {
 		rf.currentTerm = args.Term
 		rf.state = Follower
 		rf.stateChanged = true
+		rf.votedFor = -1
 		rf.cond.Broadcast()
 	} else {
 		rf.lastHeartBeat = time.Now()
@@ -285,9 +285,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	//
 	probeIndex := 0
 	for i := args.PrevLogIndex + 1; i < len(rf.log) && probeIndex < len(args.Entries); i++ {
-		log.Printf("[TERM %v] logIndex: %v, rpc args term: %v, log term: %v", rf.currentTerm, i, args.Entries[probeIndex].Term, rf.log[i].Term)
+		// log.Printf("[TERM %v] logIndex: %v, rpc args term: %v, log term: %v", rf.currentTerm, i, args.Entries[probeIndex].Term, rf.log[i].Term)
 		if args.Entries[probeIndex].Term != rf.log[i].Term {
-			log.Printf("[TERM %v]: roll back log result: %v, origin result: %v", rf.currentTerm, rf.log[:i], rf.log)
+			// log.Printf("[TERM %v]: roll back log result: %v, origin result: %v", rf.currentTerm, rf.log[:i], rf.log)
 			rf.log = rf.log[:i]
 			break
 		}
@@ -302,7 +302,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	synchronizedIndex := args.PrevLogIndex + probeIndex
 	if min(synchronizedIndex, args.LeaderCommit) > rf.commitIndex {
 		rf.commitIndex = min(synchronizedIndex, args.LeaderCommit)
-		log.Printf("[TERM %v] %v %v set commitIndex to %v", rf.currentTerm, states[rf.state], rf.me, rf.commitIndex)
+		// log.Printf("[TERM %v] %v %v set commitIndex to %v", rf.currentTerm, states[rf.state], rf.me, rf.commitIndex)
 		rf.logApplyCond.Broadcast()
 	}
 	reply.Success = true
@@ -473,12 +473,11 @@ func raft(rf *Raft) {
 	for {
 		switch rf.state {
 		case Follower:
-			log.Printf("[TERM %v] Follower %v begin\n", rf.currentTerm, rf.me)
-			rf.votedFor = -1
+			// log.Printf("[TERM %v] Follower %v begin\n", rf.currentTerm, rf.me)
 			rf.lastHeartBeat = time.Now()
 			rf.timeout = int64(360 + r.Intn(360))
 		case Candidate:
-			log.Printf("[TERM %v] Candidate %v begin \n", rf.currentTerm+1, rf.me)
+			// log.Printf("[TERM %v] Candidate %v begin \n", rf.currentTerm+1, rf.me)
 			rf.currentTerm++
 			rf.votedFor = rf.me
 			rf.lastHeartBeat = time.Now()
@@ -486,7 +485,7 @@ func raft(rf *Raft) {
 			// start vote routine
 			go candidateVoteRoutine(rf, rf.currentTerm)
 		case Leader:
-			log.Printf("[TERM %v] Leader %v begin \n", rf.currentTerm, rf.me)
+			// log.Printf("[TERM %v] Leader %v begin \n", rf.currentTerm, rf.me)
 			// start heartBeatRoutine
 			go heartBeatRoutine(rf, rf.currentTerm)
 			go appendLogRoutine(rf, rf.currentTerm)
@@ -554,6 +553,7 @@ func appendLogRoutine(rf *Raft, term int) {
 					// reply larger term
 					if appendEntriesReply.Term > rf.currentTerm {
 						rf.state = Follower
+						rf.votedFor = -1
 						rf.stateChanged = true
 						rf.currentTerm = appendEntriesReply.Term
 						rf.cond.Broadcast()
@@ -586,7 +586,7 @@ func appendLogRoutine(rf *Raft, term int) {
 						return
 					}
 					// TODO: Fast Roll Back
-					log.Printf("[TERM %v] %v %v Append %v Failed nextIndex: %v", rf.currentTerm, states[rf.state], rf.me, x, rf.nextIndex[x])
+					// log.Printf("[TERM %v] %v %v Append %v Failed nextIndex: %v", rf.currentTerm, states[rf.state], rf.me, x, rf.nextIndex[x])
 					rf.nextIndex[x]--
 					// hold lock in order to construct new RPC request
 					rf.mu.Unlock()
@@ -688,6 +688,7 @@ func candidateVoteRoutine(rf *Raft, term int) {
 			if requestVoteReply.Term > rf.currentTerm {
 				rf.state = Follower
 				rf.stateChanged = true
+				rf.votedFor = -1
 				rf.currentTerm = requestVoteReply.Term
 				rf.cond.Broadcast()
 			}
@@ -699,7 +700,7 @@ func candidateVoteRoutine(rf *Raft, term int) {
 			defer mu.Unlock()
 			voteCount++
 			// got majority votes
-			log.Printf("[TERM %v] %v %v Got vote from %v\n", rf.currentTerm, states[rf.state], rf.me, term)
+			// log.Printf("[TERM %v] %v %v Got vote from %v\n", rf.currentTerm, states[rf.state], rf.me, term)
 			if voteCount > len(rf.peers)/2 {
 				rf.state = Leader
 				rf.stateChanged = true
