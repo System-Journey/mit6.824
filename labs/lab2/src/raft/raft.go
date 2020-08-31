@@ -274,6 +274,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 	// return false if log doesn't contain prevLogTerm at prevLogIndex
 	if args.PrevLogIndex >= len(rf.log) || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		// log.Println("log doesn't contain prevLogTerm at prevLogIndex")
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
@@ -284,8 +285,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	//
 	probeIndex := 0
 	for i := args.PrevLogIndex + 1; i < len(rf.log) && probeIndex < len(args.Entries); i++ {
+		log.Printf("[TERM %v] logIndex: %v, rpc args term: %v, log term: %v", rf.currentTerm, i, args.Entries[probeIndex].Term, rf.log[i].Term)
 		if args.Entries[probeIndex].Term != rf.log[i].Term {
-			rf.log = rf.log[:i-1]
+			log.Printf("[TERM %v]: roll back log result: %v, origin result: %v", rf.currentTerm, rf.log[:i], rf.log)
+			rf.log = rf.log[:i]
 			break
 		}
 		probeIndex++
@@ -299,6 +302,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	synchronizedIndex := args.PrevLogIndex + probeIndex
 	if min(synchronizedIndex, args.LeaderCommit) > rf.commitIndex {
 		rf.commitIndex = min(synchronizedIndex, args.LeaderCommit)
+		log.Printf("[TERM %v] %v %v set commitIndex to %v", rf.currentTerm, states[rf.state], rf.me, rf.commitIndex)
 		rf.logApplyCond.Broadcast()
 	}
 	reply.Success = true
@@ -431,6 +435,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+	rf.applyCh = applyCh
 
 	// Your initialization code here (2A, 2B, 2C).
 	rf.mu = sync.Mutex{}
@@ -462,15 +467,13 @@ func raft(rf *Raft) {
 	rf.mu.Lock()
 	// timeout goroutine
 	go timeoutRoutine(rf)
-	// appendLog goroutine
-	go appendLogRoutine(rf, rf.currentTerm)
 	// apply log goroutine
 	go applyLogRoutine(rf)
 	// state machine handle loop
 	for {
 		switch rf.state {
 		case Follower:
-			log.Printf("[TERM %v] Follower %v begin \n", rf.currentTerm, rf.me)
+			log.Printf("[TERM %v] Follower %v begin\n", rf.currentTerm, rf.me)
 			rf.votedFor = -1
 			rf.lastHeartBeat = time.Now()
 			rf.timeout = int64(360 + r.Intn(360))
@@ -486,6 +489,7 @@ func raft(rf *Raft) {
 			log.Printf("[TERM %v] Leader %v begin \n", rf.currentTerm, rf.me)
 			// start heartBeatRoutine
 			go heartBeatRoutine(rf, rf.currentTerm)
+			go appendLogRoutine(rf, rf.currentTerm)
 		}
 		// wait for state change and reset flag
 		for !rf.stateChanged {
@@ -498,12 +502,12 @@ func raft(rf *Raft) {
 func appendLogRoutine(rf *Raft, term int) {
 	for {
 		// wait 10ms to batch append logs
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		rf.mu.Lock()
 		// currently not leader
-		if rf.state != Leader {
+		if rf.currentTerm != term {
 			rf.mu.Unlock()
-			continue
+			return
 		}
 		rf.mu.Unlock()
 		// send AppendEntreis RPC to each peer
@@ -518,8 +522,10 @@ func appendLogRoutine(rf *Raft, term int) {
 					rf.mu.Unlock()
 					return
 				}
-				appendEntriesReply := AppendEntriesReply{}
-				for !appendEntriesReply.Success {
+				rf.mu.Unlock()
+				for {
+					rf.mu.Lock()
+					appendEntriesReply := AppendEntriesReply{}
 					appendEntriesArgs := AppendEntriesArgs{
 						Term:         term,
 						LeaderID:     rf.me,
@@ -549,6 +555,7 @@ func appendLogRoutine(rf *Raft, term int) {
 					if appendEntriesReply.Term > rf.currentTerm {
 						rf.state = Follower
 						rf.stateChanged = true
+						rf.currentTerm = appendEntriesReply.Term
 						rf.cond.Broadcast()
 						rf.mu.Unlock()
 						return
@@ -557,7 +564,6 @@ func appendLogRoutine(rf *Raft, term int) {
 					if appendEntriesReply.Success {
 						rf.matchIndex[x] = appendEntriesArgs.PrevLogIndex + len(appendEntriesArgs.Entries)
 						rf.nextIndex[x] = rf.matchIndex[x] + 1
-						rf.logApplyCond.Broadcast()
 						// increase commitIndex
 						lastIndex := appendEntriesArgs.PrevLogIndex + len(appendEntriesArgs.Entries)
 						if rf.log[lastIndex].Term == rf.currentTerm && lastIndex > rf.commitIndex {
@@ -580,8 +586,10 @@ func appendLogRoutine(rf *Raft, term int) {
 						return
 					}
 					// TODO: Fast Roll Back
+					log.Printf("[TERM %v] %v %v Append %v Failed nextIndex: %v", rf.currentTerm, states[rf.state], rf.me, x, rf.nextIndex[x])
 					rf.nextIndex[x]--
 					// hold lock in order to construct new RPC request
+					rf.mu.Unlock()
 				}
 			}(i)
 		}
@@ -604,6 +612,7 @@ func applyLogRoutine(rf *Raft) {
 				Command:      rf.log[i].Command,
 				CommandIndex: i,
 			}
+			// log.Printf("trigger log apply!! index: %v", i)
 			rf.applyCh <- applyMsg
 			rf.lastApplied++
 		}
@@ -671,7 +680,6 @@ func candidateVoteRoutine(rf *Raft, term int) {
 			}
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
-			log.Printf("[TERM %v] Check vote from %v\n", term, x)
 			// stale reply
 			if term != rf.currentTerm || rf.stateChanged || rf.state == Leader {
 				return
@@ -691,7 +699,7 @@ func candidateVoteRoutine(rf *Raft, term int) {
 			defer mu.Unlock()
 			voteCount++
 			// got majority votes
-			log.Printf("[TERM %v] Got vote from %v\n", term, x)
+			log.Printf("[TERM %v] %v %v Got vote from %v\n", rf.currentTerm, states[rf.state], rf.me, term)
 			if voteCount > len(rf.peers)/2 {
 				rf.state = Leader
 				rf.stateChanged = true
