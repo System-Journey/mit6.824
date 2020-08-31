@@ -244,7 +244,7 @@ func checkUptoDate(rf *Raft, term int, lastIndex int) bool {
 	if term > rf.log[len(rf.log)-1].Term {
 		return true
 	}
-	if term == rf.log[len(rf.log)-1].Term && lastIndex >= len(rf.log) {
+	if term == rf.log[len(rf.log)-1].Term && lastIndex >= len(rf.log)-1 {
 		return true
 	}
 	return false
@@ -440,6 +440,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// log replication
 	rf.log = append(rf.log, Log{}) // padding empty log
 	rf.logApplyCond = sync.NewCond(&rf.mu)
+	for i := 0; i < len(rf.peers); i++ {
+		rf.nextIndex = append(rf.nextIndex, 1)
+		rf.matchIndex = append(rf.matchIndex, 0)
+	}
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	// begin raft goroutine
@@ -504,6 +508,9 @@ func appendLogRoutine(rf *Raft, term int) {
 		rf.mu.Unlock()
 		// send AppendEntreis RPC to each peer
 		for i := 0; i < len(rf.peers); i++ {
+			if i == rf.me {
+				continue
+			}
 			go func(x int) {
 				rf.mu.Lock()
 				// no log to send
@@ -664,6 +671,7 @@ func candidateVoteRoutine(rf *Raft, term int) {
 			}
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
+			log.Printf("[TERM %v] Check vote from %v\n", term, x)
 			// stale reply
 			if term != rf.currentTerm || rf.stateChanged || rf.state == Leader {
 				return
