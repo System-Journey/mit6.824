@@ -189,11 +189,11 @@ type AppendEntriesArgs struct {
     Term int
     LeaderID int
     // consistency check
-    prevLogIndex int
-    prevLogTerm  int
+    PrevLogIndex int
+    PrevLogTerm  int
     // log entries
-    entries []Log
-    leaderCommit int
+    Entries []Log
+    LeaderCommit int
 }
 
 type AppendEntriesReply struct {
@@ -205,8 +205,8 @@ type RequestVoteArgs struct {
     Term int
     CandidateID int
     // vote restriction
-    lastLogIndex int
-    lastLogTerm  int
+    LastLogIndex int
+    LastLogTerm  int
 }
 ```
 
@@ -225,6 +225,12 @@ type RequestVoteArgs struct {
 ##### leader选举约束
 
 + 需要`lastLogTerm`更大或者`lastLogTerm`相同`lastLogIndex`更大
+
+##### 更新本地commit Index的条件
+
+1. 和leader同步过
+2. leader处该log已经提交
+3. 该Index比本地commitIndex大
 
 #### 同步
 
