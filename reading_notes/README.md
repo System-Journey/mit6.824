@@ -4,8 +4,11 @@
 - [x] [The Google File System](./2.gfs.md)
 - [x] [The Design of a Practical System for Fault-Toloerant Virtual Machines](./3.vm-ft.md)
 - [x] [The Go memory model](./4.go-memory-model.md)
-- [ ] [In Search of an Understandable Consensus Algorithm I](./5.raft.md)
-- [ ] [In Search of an Understandable Consensus Algorithm II](./6.raft.md)
+- [x] [In Search of an Understandable Consensus Algorithm I](./5.raft-I.md)
+- [x] [In Search of an Understandable Consensus Algorithm II](./6.raft-II.md)
+- [x] [ZooKeeper: Wait free coordination for Internet-scale systems](./7.zookeeper.md)
+- [x] [Object Storage on CRAQ: High-throughput chain replication for read-mostly workloads](./8.craq.md)
+- [x] [Amazon Aurora: Design Considerations for High Throughput Clound-Native Relational Databases](./9.aurora.md)
 
 ## How to read a paper
 
