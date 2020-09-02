@@ -255,6 +255,13 @@ type Raft struct {
     Log         []Log
     VotedFor    int
 }
+
+type AppendEntriesReply struct {
+	Term               int
+	Success            bool
+	ConflictTerm       int
+	FirstConflictIndex int
+}
 ```
 
 #### 算法
