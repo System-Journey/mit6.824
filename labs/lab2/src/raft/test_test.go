@@ -568,6 +568,8 @@ func TestPersist12C(t *testing.T) {
 
 	cfg.one(11, servers, true)
 
+	log.Println("=================check 1 pass=========================")
+
 	// crash and re-start all
 	for i := 0; i < servers; i++ {
 		cfg.start1(i)
@@ -578,6 +580,7 @@ func TestPersist12C(t *testing.T) {
 	}
 
 	cfg.one(12, servers, true)
+	log.Println("=================check 2 pass=========================")
 
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect(leader1)
@@ -585,10 +588,12 @@ func TestPersist12C(t *testing.T) {
 	cfg.connect(leader1)
 
 	cfg.one(13, servers, true)
+	log.Println("=================check 3 pass=========================")
 
 	leader2 := cfg.checkOneLeader()
 	cfg.disconnect(leader2)
 	cfg.one(14, servers-1, true)
+	log.Println("=================check 4 pass=========================")
 	cfg.start1(leader2)
 	cfg.connect(leader2)
 
@@ -597,10 +602,12 @@ func TestPersist12C(t *testing.T) {
 	i3 := (cfg.checkOneLeader() + 1) % servers
 	cfg.disconnect(i3)
 	cfg.one(15, servers-1, true)
+	log.Println("=================check 5 pass=========================")
 	cfg.start1(i3)
 	cfg.connect(i3)
 
 	cfg.one(16, servers, true)
+	log.Println("=================check 6 pass=========================")
 
 	cfg.end()
 }

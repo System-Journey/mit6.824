@@ -240,3 +240,31 @@ type RequestVoteArgs struct {
 
 1. 隐藏bug: 对于voteRequest请求接收者，如其term小于请求的candiadate所在的term，需要转变为follower，此时若直接给予投票，则主状态机循环中就不应当设置votedFor为-1，否则可能出现同一server同一term投两次票的情况。
     + 解决：转变状态为follower的同时即设置votedFor为-1，而不再在主状态机中设置votedFor。
+
+### lab 2C Design Document
+
+
+#### 数据结构
+
+```go
+type Raft struct {
+    applyCh    chan ApplyMsg      // channel to send committed message
+    cond      *sync.Cond          // cond to coordinate goroutines
+    // persistent state
+    CurrentTerm int
+    Log         []Log
+    VotedFor    int
+}
+```
+
+#### 算法
+
+1. 冲突日志快速回滚
+    + RPC handler
+        1. follower在prevLogIndex处没有日志
+            + 回复最后一个日志的term和index
+        2. follower在prevLogIndex处日志和prevLogTerm不同
+            + 回复follower在prevLogIndex处日志的term对应的最小的index
+    + 处理rpc回复
+        + 对应index处term相同，nextIndex设置为index+1
+        + 不同，nextIndex设置为index-1
