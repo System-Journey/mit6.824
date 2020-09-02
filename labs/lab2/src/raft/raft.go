@@ -527,7 +527,7 @@ func raft(rf *Raft) {
 			// start vote routine
 			go candidateVoteRoutine(rf, rf.CurrentTerm)
 		case Leader:
-			log.Printf("[TERM %v] Leader %v begin \n", rf.CurrentTerm, rf.me)
+			// log.Printf("[TERM %v] Leader %v begin \n", rf.CurrentTerm, rf.me)
 			// start heartBeatRoutine
 			go heartBeatRoutine(rf, rf.CurrentTerm)
 			go appendLogRoutine(rf, rf.CurrentTerm)
@@ -790,6 +790,24 @@ func heartBeatRoutine(rf *Raft, term int) {
 					}
 					rf.mu.Unlock()
 				}
+				rf.mu.Lock()
+				// stale reply
+				if term != rf.CurrentTerm {
+					rf.mu.Unlock()
+					return
+				}
+				// reply larger term
+				if appendEntriesReply.Term > rf.CurrentTerm {
+					rf.state = Follower
+					rf.VotedFor = -1
+					rf.stateChanged = true
+					rf.CurrentTerm = appendEntriesReply.Term
+					rf.persist()
+					rf.cond.Broadcast()
+					rf.mu.Unlock()
+					return
+				}
+				rf.mu.Unlock()
 			}(i)
 		}
 		time.Sleep(120 * time.Millisecond)
