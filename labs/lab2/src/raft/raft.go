@@ -258,6 +258,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		if checkUptoDate(rf, args.LastLogTerm, args.LastLogIndex) {
 			// rf's state
 			rf.VotedFor = args.CandidateID
+			rf.lastHeartBeat = time.Now()
 			rf.persist()
 			// reply
 			reply.Term = rf.CurrentTerm
