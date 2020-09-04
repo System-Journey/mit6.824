@@ -9,6 +9,8 @@
 - [x] [ZooKeeper: Wait free coordination for Internet-scale systems](./7.zookeeper.md)
 - [x] [Object Storage on CRAQ: High-throughput chain replication for read-mostly workloads](./8.craq.md)
 - [x] [Amazon Aurora: Design Considerations for High Throughput Clound-Native Relational Databases](./9.aurora.md)
+- [x] [Frangipani: A Scalable Distributed File System](./10.grangipani.md)
+- [x] [Distributed Transactions](./11.distributed-transactions.md)
 
 ## How to read a paper
 
