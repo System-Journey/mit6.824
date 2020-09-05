@@ -152,9 +152,11 @@ Example of problem if r/o xaction's TS is too small:
     + *TimeStamp = TT.now().latest*
         + r/o - at start time, chose latest bound
         + r/w - when commit begins, chose latest bound
+    + 保证所有时间戳随真实时间递增而递增
 + *COMMIT WAIT* for r/w transaction
     + before commit, r/w has to delay until TS < TT.now().earliest
     + guarantees that TS has passed，即之后发生的r/o事务选择的时间戳必定大于该r/w时间戳(时间戳必定是单调推进的)
+    + 保证r/w事务的发生在其时间戳之后
 
 ```
   The scenario is T1 commits, then T2 starts, T2 must see T1's writes.
