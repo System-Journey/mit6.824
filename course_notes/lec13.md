@@ -128,7 +128,8 @@ Example of problem if r/o xaction's TS is too small:
 ```
 
 + This would cause T2 to read the version of x at time 0, which was 1.
-+ 问题在于T1的时间戳选择有问题，即T1准确的提交时间和时间戳时间相差太多 => 考虑延迟T1的提交使得能保证该时间戳之前T1没有提交
++ 问题在于T1的时间戳选择有问题，即T1在真实时间线上相比时间戳过早提交
+    + 解决：要求T1真实提交时间迟于时间戳，这样真实提交时间之后发生的读就能看到T1。
 
 ### TrueTime API
 
@@ -158,11 +159,11 @@ Example of problem if r/o xaction's TS is too small:
 (P for prepare)
 ```
 
-+ 时间戳和真实时间是两条线，外部一致性遵守真实时间。
++ 时间戳和真实时间是两条线，外部一致性遵守真实时间。时间戳机制使得系统满足较大时间戳r/o事务能看见较小时间戳的r/w事务，但是如果时钟不同步，可能出现较小时间戳的事件发生在较大时间戳事件之后，因此不满足外部一致性。
 + C guaranteed to occur after its TS (10) due to commit wait.
 + Rx occurs after C by assumption, and thus after time 10
 
-## summary
+### summary
 
 + Snapshot Isolation gives you serializable r/o transactions.
     + Timestamps set an order.
