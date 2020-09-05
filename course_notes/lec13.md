@@ -17,6 +17,8 @@ Data is sharded over multiple servers of one datacenter and replicas are in diff
 + distributed transactions include multiple shards -> multiple paxos groups
 + transactions that read multiple records must be serializable
 
+---
+
 ## R/W transactions
 
 *two-phase commit (2PC) with Paxos-replicated participants*
@@ -50,6 +52,8 @@ Do all the reads first and at last do all the writes.
 2. two-phase commit -> atomic distributed transaction commit
     + use paxos to tolerant TC failure
 3. huge messages
+
+---
 
 ## read-only transactions
 
@@ -111,6 +115,8 @@ assume all servers have synchronized clocks. Assign every transaction a *TIMESTA
 + Paxos leaders send writes in timestamp order
 + before serving a read at time 20, replica must see Paxos write for time > 20
 
+---
+
 ## what if clocks aren't synchronized?
 
 0. Not affect r/w transaction.
@@ -139,6 +145,8 @@ Example of problem if r/o xaction's TS is too small:
     + provide guaranteed bounds that the correc time must be in somewhere in the interval
 
 ### How Spanner ensures that if r/w T1 finishes before r/o T2 starts, TS1 < TS2.(i.e. r/o transaction timestamps are not too small)
+
+*目标: 如果事务T1发生在T2之前，则要求TS1 < TS2*
 
 + *START RULE*
     + *TimeStamp = TT.now().latest*
