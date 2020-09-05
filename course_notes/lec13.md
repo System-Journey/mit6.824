@@ -134,8 +134,7 @@ Example of problem if r/o xaction's TS is too small:
 ```
 
 + This would cause T2 to read the version of x at time 0, which was 1.
-+ 问题在于T1的时间戳选择有问题，即T1在真实时间线上相比时间戳过早提交
-    + 解决：要求T1真实提交时间迟于时间戳，这样真实提交时间之后发生的读就能看到T1。
++ 时间戳和真实时间是两条线，外部一致性遵守真实时间。时间戳机制使得系统满足较大时间戳r/o事务能看见较小时间戳的r/w事务，但是如果时钟不同步，可能出现较小时间戳的事件发生在较大时间戳事件之后，因此不满足外部一致性。
 
 ### TrueTime API
 
@@ -146,17 +145,20 @@ Example of problem if r/o xaction's TS is too small:
 
 ### How Spanner ensures that if r/w T1 finishes before r/o T2 starts, TS1 < TS2.(i.e. r/o transaction timestamps are not too small)
 
-*目标: 如果事务T1发生在T2之前，则要求TS1 < TS2*
+*目标: 后发生事务看见先发生事务的结果。即如果事务T1发生在T2之前，则要求TS1 < TS2*
 
 + *START RULE*
     + *TimeStamp = TT.now().latest*
         + r/o - at start time, chose latest bound
         + r/w - when commit begins, chose latest bound
-    + 保证所有时间戳随真实时间递增而递增
+    + 保证选取的时间戳比当前真实时间大，但仍不能保证之后发生的事务的时间戳比之前发生的事务的时间戳更大
 + *COMMIT WAIT* for r/w transaction
     + before commit, r/w has to delay until TS < TT.now().earliest
     + guarantees that TS has passed，即之后发生的r/o事务选择的时间戳必定大于该r/w时间戳(时间戳必定是单调推进的)
     + 保证r/w事务的发生在其时间戳之后
++ `TS1 < Real Time 1 < Real Time 2 < TS2`
++ `Real Time 2 < TS2`由start rule保证
++ `TS1 < Real Time 1`由commit wait保证
 
 ```
   The scenario is T1 commits, then T2 starts, T2 must see T1's writes.
@@ -169,7 +171,6 @@ Example of problem if r/o xaction's TS is too small:
 (P for prepare)
 ```
 
-+ 时间戳和真实时间是两条线，外部一致性遵守真实时间。时间戳机制使得系统满足较大时间戳r/o事务能看见较小时间戳的r/w事务，但是如果时钟不同步，可能出现较小时间戳的事件发生在较大时间戳事件之后，因此不满足外部一致性。
 + C guaranteed to occur after its TS (10) due to commit wait.
 + Rx occurs after C by assumption, and thus after time 10
 
