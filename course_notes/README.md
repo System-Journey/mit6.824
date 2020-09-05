@@ -9,3 +9,7 @@
 - [x] [lec7: Fault Tolerance: Raft(1)](./lec7.md)
 - [x] [lec8: Zookeeper](./lec8.md)
 - [x] [lec9: Chain Replication, CRAQ](./lec9.md)
+- [x] [lec10: Cloud Repllicated DB, Aurora](./lec10.md)
+- [x] [lec11: Cache Consistency: Frangipani](./lec11.md)
+- [x] [lec12: Distributed Transactions](./lec12.md)
+- [x] [lec13: Spanner](./lec13.md)
