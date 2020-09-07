@@ -11,6 +11,7 @@
 - [x] [Amazon Aurora: Design Considerations for High Throughput Clound-Native Relational Databases](./9.aurora.md)
 - [x] [Frangipani: A Scalable Distributed File System](./10.grangipani.md)
 - [x] [Distributed Transactions](./11.distributed-transactions.md)
+- [x] [Spanner: Google's Globally-Distributed Database](./12.spanner.md)
 
 ## How to read a paper
 
