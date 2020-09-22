@@ -63,15 +63,15 @@ const (
 type Raft struct {
     cond      *sync.Cond          // cond to coordinate goroutines
     // persistent state
-	currentTerm int
-	log         []Log
-	votedFor    int
+    currentTerm int
+    log         []Log
+    votedFor    int
 
-	// volatile state
-	state         state
-	stateChanged  bool
-	lastHeartBeat time.Time
-	timeout       int64
+    // volatile state
+    state         state
+    stateChanged  bool
+    lastHeartBeat time.Time
+    timeout       int64
 }
 
 type Log struct {
@@ -169,13 +169,13 @@ type Raft struct {
     applyCh    chan ApplyMsg      // channel to send committed message
     cond      *sync.Cond          // cond to coordinate goroutines
     // persistent state
-	currentTerm int
-	log         []Log
-	votedFor    int
-	// leader election volatile state
-	state         state
-	stateChanged  bool
-	lastHeartBeat time.Time
+    currentTerm int
+    log         []Log
+    votedFor    int
+    // leader election volatile state
+    state         state
+    stateChanged  bool
+    lastHeartBeat time.Time
     timeout       int64
     // log replication volatile state
     commitIndex   int
@@ -257,10 +257,10 @@ type Raft struct {
 }
 
 type AppendEntriesReply struct {
-	Term               int
-	Success            bool
-	ConflictTerm       int
-	FirstConflictIndex int
+    Term               int
+    Success            bool
+    ConflictTerm       int
+    FirstConflictIndex int
 }
 ```
 
